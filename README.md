@@ -1,0 +1,5 @@
+# Dawn of War Mod Manager
+This is a Mod Manager tool designed to eliminate commonly observed problems with launching Dawn of War 1 mods, such as not having required mods or the correct versions of required mods installed in a Dawn of War game executable directory. It is based on [Cosmocrat's DoW MODenizer tool](http://www.moddb.com/mods/ultimate-apocalypse-mod/downloads/dow-mod-manager-11), but is re-written from the ground up in C++ with the wxWidgets GUI library and possesses additional functionality. The icon is also from the MODenizer tool, so credit is given to Cosmocrat for that.
+
+## Building the Mod Manager
+As mentioned above, this is built using the [wxWidgets GUI Library](http://wxwidgets.org/), specifically version 3.0.2, but the lastest stable version (if different) should also work. Simply add the wxWidgets DLL to your project and build. The details on doing such vary by compiler and IDE. For example, here are instructions for building the project in the [Code::Blocks IDE](http://www.codeblocks.org/): http://wiki.codeblocks.org/index.php?title=WxWindowsQuickRef.
