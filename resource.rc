@@ -1,0 +1,4 @@
+//aaaa ICON "wx/msw/std.ico"
+mod_manager_icon ICON "DoWModManager.ico"
+
+#include "wx/msw/wx.rc"
