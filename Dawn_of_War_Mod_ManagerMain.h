@@ -16,7 +16,6 @@
 
 #include "Dawn_of_War_Mod_ManagerApp.h"
 
-
 #include <wx/button.h>
 #include <wx/listctrl.h>
 #include <wx/dir.h>
@@ -41,13 +40,15 @@ class Dawn_of_War_Mod_ManagerFrame: public wxFrame
     bool CheckForModDirectory(wxString moduleFilePath);
     bool CheckIfModIsPlayable(wxString moduleFilePath);
     void RunMod();
+    void RefreshModListBoxes();
 
   protected:
     bool canRunMod;
+    bool nonPlayableModsVisible;
     bool devModeActive;
     bool noMoviesActive;
     bool forceHighPolyActive;
-    enum {idBtnStartMod = 1000, idCheckBoxDevMode, idCheckBoxNoMovies, idCheckBoxForceHighPoly, idListBoxInstalledMods, idListBoxRequiredMods};
+    enum {idBtnStartMod = 1000, idCheckBoxDevMode, idCheckBoxNoMovies, idCheckBoxForceHighPoly, idListBoxInstalledMods, idListBoxRequiredMods, idMenuItemShowAllMods};
     wxString dowExecDir;
     wxString dowGame;
     wxString dowExecutable;
@@ -70,6 +71,7 @@ class Dawn_of_War_Mod_ManagerFrame: public wxFrame
     void OnStartMod(wxCommandEvent& event);
     void OnChangeModSelection(wxCommandEvent& event);
     void OnClose(wxCloseEvent& event);
+    void OnShowAllMods(wxCommandEvent& event);
     void OnRefresh(wxCommandEvent& event);
     void OnExit(wxCommandEvent& event);
     void OnAbout(wxCommandEvent& event);

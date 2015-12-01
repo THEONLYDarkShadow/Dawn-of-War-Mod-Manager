@@ -47,6 +47,7 @@ wxString wxbuildinfo(wxbuildinfoformat format)
 BEGIN_EVENT_TABLE(Dawn_of_War_Mod_ManagerFrame, wxFrame)
     EVT_CLOSE(Dawn_of_War_Mod_ManagerFrame::OnClose)
     EVT_MENU(wxID_EXECUTE, Dawn_of_War_Mod_ManagerFrame::OnStartMod)
+    EVT_MENU(idMenuItemShowAllMods, Dawn_of_War_Mod_ManagerFrame::OnShowAllMods)
     EVT_MENU(wxID_REFRESH, Dawn_of_War_Mod_ManagerFrame::OnRefresh)
     EVT_MENU(wxID_EXIT, Dawn_of_War_Mod_ManagerFrame::OnExit)
     EVT_MENU(wxID_ABOUT, Dawn_of_War_Mod_ManagerFrame::OnAbout)
@@ -64,6 +65,10 @@ END_EVENT_TABLE()
 Dawn_of_War_Mod_ManagerFrame::Dawn_of_War_Mod_ManagerFrame(wxFrame *frame, const wxString &title) : wxFrame(frame, -1, title, wxDefaultPosition, wxDefaultSize, wxDEFAULT_FRAME_STYLE & ~(wxRESIZE_BORDER | wxMAXIMIZE_BOX))
 {
   canRunMod = false;
+  nonPlayableModsVisible = false;
+  devModeActive = false;
+  noMoviesActive = false;
+  forceHighPolyActive = false;
   moduleFilePaths = new wxArrayString();
   modNames = new wxArrayString();
   requiredMods = new wxArrayString();
@@ -217,6 +222,7 @@ bool Dawn_of_War_Mod_ManagerFrame::InitGUI()
 
   fileMenu = new wxMenu();
   fileMenu->Append(wxID_EXECUTE, "Run Mod...", "Run currently selected mod.");
+  fileMenu->Append(idMenuItemShowAllMods, "Show All Mods", "Shows all mods, including ones that are marked as non-playable.", wxITEM_CHECK);
   fileMenu->Append(wxID_REFRESH, "", "Refresh mod list.");
   fileMenu->Append(wxID_EXIT, "", "Exit the Dawn of War Mod Manager.");
   fileMenu->Enable(wxID_EXECUTE, false);
@@ -323,14 +329,27 @@ bool Dawn_of_War_Mod_ManagerFrame::GetModNames()
   wxFileName fileNameHandle;
   wxString moduleFilePath;
   wxString modNameAndVersion;
-  size_t numOfModuleFilePaths = moduleFilePaths->GetCount();
+  size_t insertionCounter = 0;
 
-  for (size_t counter = 0; counter < numOfModuleFilePaths; counter++)
+  for (size_t loopCounter = 0; loopCounter < moduleFilePaths->GetCount(); loopCounter++)
   {
-    moduleFilePath = moduleFilePaths->Item(counter);
+    moduleFilePath = moduleFilePaths->Item(loopCounter);
+
+    // If a mod is non-playable and Show All Mods is not checked, skip adding it to the list of Mod Names.
+    if (!nonPlayableModsVisible)
+    {
+      if (!CheckIfModIsPlayable(moduleFilePath))
+      {
+        moduleFilePaths->RemoveAt(loopCounter);
+        loopCounter--;
+        continue;
+      }
+    }
+
     fileNameHandle = moduleFilePath;
     modNameAndVersion = fileNameHandle.GetName() + " (Version " + GetModVersion(moduleFilePath) + ")";
-    modNames->Insert(modNameAndVersion, counter);
+    modNames->Insert(modNameAndVersion, insertionCounter);
+    insertionCounter++;
   }
   modNames->Shrink(); // Minimise wxArrayString memory consumption.
 
@@ -415,7 +434,7 @@ std::string Dawn_of_War_Mod_ManagerFrame::GetDesiredModVersion(size_t itemNumber
   if (fileString.StartsWith(requiredMods->Item(itemNumber)))
   {
     fileString = textFileHandle.GetPrevLine();
-    if (fileString.StartsWith(";; Version = ", &desiredModVersion))
+    if (fileString.StartsWith(";; Version = ", &desiredModVersion) || fileString.StartsWith("// Version = ", &desiredModVersion) || fileString.StartsWith("-- Version = ", &desiredModVersion))
     {
       fileString = textFileHandle.GetNextLine(); // Prevents infinite loop.
       return desiredModVersion.ToStdString();
@@ -656,6 +675,23 @@ void Dawn_of_War_Mod_ManagerFrame::RunMod()
   }
 }
 
+/// @brief Clears the contents of the Installed Mods List Box and the Required Mods List Box, then repopulates the former.
+void Dawn_of_War_Mod_ManagerFrame::RefreshModListBoxes()
+{
+  moduleFilePaths->Clear();
+  modNames->Clear();
+  requiredMods->Clear();
+  installedModsListBox->Clear();
+  requiredModsListBox->Clear();
+  canRunMod = false;
+  startModButton->Disable();
+  fileMenu->Enable(wxID_EXECUTE, false);
+
+  GetModuleFilePaths();
+  GetModNames();
+  installedModsListBox->InsertItems(*modNames, 0);
+}
+
 /// @brief Event handler for when the Developer Mode Check Box is clicked.
 void Dawn_of_War_Mod_ManagerFrame::OnDevModeCheckBoxClicked(wxCommandEvent &event)
 {
@@ -751,26 +787,31 @@ void Dawn_of_War_Mod_ManagerFrame::OnClose(wxCloseEvent &event)
   Destroy();
 }
 
+/// @brief Event Handler for when the Show All Mods Menu Item is clicked.
+void Dawn_of_War_Mod_ManagerFrame::OnShowAllMods(wxCommandEvent &event)
+{
+  if (fileMenu->IsChecked(idMenuItemShowAllMods))
+  {
+    nonPlayableModsVisible = true;
+    statusBar->SetStatusText("All mods are now shown.");
+  }
+  else
+  {
+    nonPlayableModsVisible = false;
+    statusBar->SetStatusText("Only playable mods are now shown.");
+  }
+
+  RefreshModListBoxes();
+}
+
 /// @brief Event Handler for when the Refresh Mod Menu Item is clicked.
 /// @see GetModuleFilePaths()
 /// @see GetModNames()
+/// @see RefreshModListBoxes()
 void Dawn_of_War_Mod_ManagerFrame::OnRefresh(wxCommandEvent &event)
 {
   statusBar->SetStatusText("Refreshing mod list...");
-
-  moduleFilePaths->Clear();
-  modNames->Clear();
-  requiredMods->Clear();
-  installedModsListBox->Clear();
-  requiredModsListBox->Clear();
-  canRunMod = false;
-  startModButton->Disable();
-  fileMenu->Enable(wxID_EXECUTE, false);
-
-  GetModuleFilePaths();
-  GetModNames();
-  installedModsListBox->InsertItems(*modNames, 0);
-
+  RefreshModListBoxes();
   statusBar->SetStatusText("Mod list has been refreshed.");
 }
 
@@ -785,7 +826,7 @@ void Dawn_of_War_Mod_ManagerFrame::OnAbout(wxCommandEvent &event)
 {
   wxAboutDialogInfo aboutInfo;
   aboutInfo.SetName("Dawn of War Mod Manager");
-  aboutInfo.SetVersion("1.0. Built with " + wxbuildinfo(long_f) + ".");
+  aboutInfo.SetVersion("1.1. Built with " + wxbuildinfo(long_f) + ".");
   aboutInfo.SetDescription("A mod manager for all the Dawn of War 1 games.\nBased on Cosmocrat's DoW MODenizer.\nIcon from the DoW MODenizer.");
   aboutInfo.SetCopyright("(C) 2015 THEONLYDarkShadow");
   aboutInfo.AddDeveloper("THEONLYDarkShadow");
