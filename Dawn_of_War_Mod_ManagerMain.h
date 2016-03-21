@@ -27,7 +27,6 @@ class Dawn_of_War_Mod_ManagerFrame: public wxFrame
 {
   public:
     Dawn_of_War_Mod_ManagerFrame(wxFrame *frame, const wxString& title);
-    ~Dawn_of_War_Mod_ManagerFrame();
     bool Init();
     bool InitGUI();
     bool GetModuleFilePaths();
@@ -41,6 +40,9 @@ class Dawn_of_War_Mod_ManagerFrame: public wxFrame
     bool CheckIfModIsPlayable(wxString moduleFilePath);
     void RunMod();
     void RefreshModListBoxes();
+    void ShowFatalDataErrors();
+    bool ToggleAllAIMode(bool active);
+    bool DoesAllAIModeCommandExist();
 
   protected:
     bool canRunMod;
@@ -48,7 +50,19 @@ class Dawn_of_War_Mod_ManagerFrame: public wxFrame
     bool devModeActive;
     bool noMoviesActive;
     bool forceHighPolyActive;
-    enum {idBtnStartMod = 1000, idCheckBoxDevMode, idCheckBoxNoMovies, idCheckBoxForceHighPoly, idListBoxInstalledMods, idListBoxRequiredMods, idMenuItemShowAllMods};
+    bool allAIModeActive;
+    enum
+    {
+      idBtnStartMod = 1000,
+      idCheckBoxDevMode,
+      idCheckBoxNoMovies,
+      idCheckBoxForceHighPoly,
+      idCheckBoxAllAIMode,
+      idListBoxInstalledMods,
+      idListBoxRequiredMods,
+      idMenuItemShowAllMods,
+      idMenuItemShowFatalDataErrors
+    };
     wxString dowExecDir;
     wxString dowGame;
     wxString dowExecutable;
@@ -58,24 +72,27 @@ class Dawn_of_War_Mod_ManagerFrame: public wxFrame
     wxCheckBox* devModeCheckBox;
     wxCheckBox* noMoviesCheckBox;
     wxCheckBox* forceHighPolyCheckBox;
+    wxCheckBox* allAIModeCheckBox;
     wxButton* startModButton;
     wxListBox* installedModsListBox;
     wxListBox* requiredModsListBox;
     wxStatusBar* statusBar;
     wxMenu* fileMenu;
+    wxMenu* optionsMenu;
 
   private:
     void OnDevModeCheckBoxClicked(wxCommandEvent& event);
     void OnNoMoviesCheckBoxClicked(wxCommandEvent& event);
     void OnForceHighPolyCheckBoxClicked(wxCommandEvent& event);
+    void OnAllAIModeCheckBoxClicked(wxCommandEvent& event);
     void OnStartMod(wxCommandEvent& event);
     void OnChangeModSelection(wxCommandEvent& event);
     void OnClose(wxCloseEvent& event);
+    void OnShowFatalDataErrors(wxCommandEvent& event);
     void OnShowAllMods(wxCommandEvent& event);
     void OnRefresh(wxCommandEvent& event);
     void OnExit(wxCommandEvent& event);
     void OnAbout(wxCommandEvent& event);
-    void OnResize(wxSizeEvent& event);
     DECLARE_EVENT_TABLE()
 };
 

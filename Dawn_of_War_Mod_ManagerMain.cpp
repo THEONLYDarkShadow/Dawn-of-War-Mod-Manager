@@ -47,6 +47,7 @@ wxString wxbuildinfo(wxbuildinfoformat format)
 BEGIN_EVENT_TABLE(Dawn_of_War_Mod_ManagerFrame, wxFrame)
     EVT_CLOSE(Dawn_of_War_Mod_ManagerFrame::OnClose)
     EVT_MENU(wxID_EXECUTE, Dawn_of_War_Mod_ManagerFrame::OnStartMod)
+    EVT_MENU(idMenuItemShowFatalDataErrors, Dawn_of_War_Mod_ManagerFrame::OnShowFatalDataErrors)
     EVT_MENU(idMenuItemShowAllMods, Dawn_of_War_Mod_ManagerFrame::OnShowAllMods)
     EVT_MENU(wxID_REFRESH, Dawn_of_War_Mod_ManagerFrame::OnRefresh)
     EVT_MENU(wxID_EXIT, Dawn_of_War_Mod_ManagerFrame::OnExit)
@@ -54,6 +55,7 @@ BEGIN_EVENT_TABLE(Dawn_of_War_Mod_ManagerFrame, wxFrame)
     EVT_CHECKBOX(idCheckBoxDevMode, Dawn_of_War_Mod_ManagerFrame::OnDevModeCheckBoxClicked)
     EVT_CHECKBOX(idCheckBoxNoMovies, Dawn_of_War_Mod_ManagerFrame::OnNoMoviesCheckBoxClicked)
     EVT_CHECKBOX(idCheckBoxForceHighPoly, Dawn_of_War_Mod_ManagerFrame::OnForceHighPolyCheckBoxClicked)
+    EVT_CHECKBOX(idCheckBoxAllAIMode, Dawn_of_War_Mod_ManagerFrame::OnAllAIModeCheckBoxClicked)
     EVT_BUTTON(idBtnStartMod, Dawn_of_War_Mod_ManagerFrame::OnStartMod)
     EVT_LISTBOX(idListBoxInstalledMods, Dawn_of_War_Mod_ManagerFrame::OnChangeModSelection)
     EVT_LISTBOX_DCLICK(idListBoxInstalledMods, Dawn_of_War_Mod_ManagerFrame::OnStartMod)
@@ -69,6 +71,7 @@ Dawn_of_War_Mod_ManagerFrame::Dawn_of_War_Mod_ManagerFrame(wxFrame *frame, const
   devModeActive = false;
   noMoviesActive = false;
   forceHighPolyActive = false;
+  allAIModeActive = false;
   moduleFilePaths = new wxArrayString();
   modNames = new wxArrayString();
   requiredMods = new wxArrayString();
@@ -77,17 +80,21 @@ Dawn_of_War_Mod_ManagerFrame::Dawn_of_War_Mod_ManagerFrame(wxFrame *frame, const
   {
     Close();
   }
-}
 
-/// @brief Destructor for the Mod Manager frame.
-Dawn_of_War_Mod_ManagerFrame::~Dawn_of_War_Mod_ManagerFrame()
-{
+  if (DoesAllAIModeCommandExist())
+  {
+    devModeActive = true;
+    devModeCheckBox->SetValue(true);
+    allAIModeActive = true;
+    allAIModeCheckBox->Enable();
+    allAIModeCheckBox->SetValue(true);
+  }
 }
 
 /// @brief Initialiser function for the Mod Manager.
 /// Asks user for a directory containing a Dawn of War/Winter Assault/Dark Crusade/Soulstorm executable
 /// and records the executable name, directory and game name.
-/// @return Boolean.
+/// @return True if successful, false otherwise.
 bool Dawn_of_War_Mod_ManagerFrame::Init()
 {
   wxDirDialog chooseFolderDialog(nullptr, "Select executable directory of Dawn of War/Winter Assault/Dark Crusade/Soulstorm", "", wxDD_DEFAULT_STYLE | wxDD_DIR_MUST_EXIST);
@@ -102,7 +109,7 @@ bool Dawn_of_War_Mod_ManagerFrame::Init()
   wxDir dirHandle(dowExecDir);
   if (!dirHandle.IsOpened())
   {
-    wxMessageBox("The directory you have chosen cannot be opened.", "Cannot Open Directory");
+    wxMessageBox("The directory you have chosen cannot be opened.", "Cannot Open Directory", wxICON_ERROR);
     return false;
   }
 
@@ -136,9 +143,11 @@ bool Dawn_of_War_Mod_ManagerFrame::Init()
     hasSS = true;
   }
 
+  dirHandle.Close();
+
   if (numOfDoWExecutables == 0)
   {
-    wxMessageBox("You must choose a directory with either the Dawn of War, Winter Assault, Dark Crusade or Soulstorm executable inside it.", "Game Executable Not Found");
+    wxMessageBox("You must choose a directory with either the Dawn of War, Winter Assault, Dark Crusade or Soulstorm executable inside it.", "Game Executable Not Found", wxICON_ERROR);
     return false;
   }
   else if (numOfDoWExecutables == 1)
@@ -207,12 +216,11 @@ bool Dawn_of_War_Mod_ManagerFrame::Init()
     return false;
   }
 
-  dirHandle.Close();
   return true;
 }
 
 /// @brief Creates all the GUI elements and populates them with relevant data.
-/// @return Boolean.
+/// @return True if successful, false otherwise.
 bool Dawn_of_War_Mod_ManagerFrame::InitGUI()
 {
   this->SetSizeHints(wxDefaultSize, wxDefaultSize);
@@ -222,16 +230,23 @@ bool Dawn_of_War_Mod_ManagerFrame::InitGUI()
 
   fileMenu = new wxMenu();
   fileMenu->Append(wxID_EXECUTE, "Run Mod...", "Run currently selected mod.");
-  fileMenu->Append(idMenuItemShowAllMods, "Show All Mods", "Shows all mods, including ones that are marked as non-playable.", wxITEM_CHECK);
   fileMenu->Append(wxID_REFRESH, "", "Refresh mod list.");
   fileMenu->Append(wxID_EXIT, "", "Exit the Dawn of War Mod Manager.");
   fileMenu->Enable(wxID_EXECUTE, false);
+
+  wxMenu* troubleshootMenu = new wxMenu();
+  troubleshootMenu->Append(idMenuItemShowFatalDataErrors, "Show Fatal Data Errors", "Show any Fatal Data Errors printed to the warnings.log file, if any exist.");
+
+  optionsMenu = new wxMenu();
+  optionsMenu->Append(idMenuItemShowAllMods, "Show All Mods", "Shows all mods, including ones that are marked as non-playable.", wxITEM_CHECK);
 
   wxMenu* helpMenu = new wxMenu();
   helpMenu->Append(wxID_ABOUT, "", "Show information about the Dawn of War Mod Manager.");
 
   wxMenuBar* menuBar = new wxMenuBar();
   menuBar->Append(fileMenu, "File");
+  menuBar->Append(troubleshootMenu, "Troubleshooting");
+  menuBar->Append(optionsMenu, "Options");
   menuBar->Append(helpMenu, "Help");
 
   this->SetMenuBar(menuBar);
@@ -249,17 +264,20 @@ bool Dawn_of_War_Mod_ManagerFrame::InitGUI()
 
   wxFlexGridSizer* topSizer = new wxFlexGridSizer(2, 1, 1);
   wxBoxSizer* directorySizer = new wxBoxSizer(wxHORIZONTAL);
-  directorySizer->Add(new wxStaticText(this, wxID_ANY, "Your current " + dowGame + " directory:", wxDefaultPosition, wxDefaultSize, 0), flagsLeft);
+  directorySizer->Add(new wxStaticText(this, wxID_ANY, "Your current " + dowGame + " directory:"), flagsLeft);
   directorySizer->Add(new wxTextCtrl(this, wxID_ANY, dowExecDir, wxDefaultPosition, wxDefaultSize, wxTE_READONLY), flagsRight);
 
   wxBoxSizer* optionsSizer = new wxBoxSizer(wxVERTICAL);
-  optionsSizer->Add(new wxStaticText(this, wxID_ANY, "Advanced Start Options:", wxDefaultPosition, wxDefaultSize, 0), flagsLeft);
-  devModeCheckBox = new wxCheckBox(this, idCheckBoxDevMode, "-dev: Developer Mode", wxDefaultPosition, wxDefaultSize, 0);
-  noMoviesCheckBox = new wxCheckBox(this, idCheckBoxNoMovies, "-nomovies: No Intro Movies", wxDefaultPosition, wxDefaultSize, 0);
-  forceHighPolyCheckBox = new wxCheckBox(this, idCheckBoxForceHighPoly, "-forcehighpoly: High Poly Models at any Distance", wxDefaultPosition, wxDefaultSize, 0);
+  optionsSizer->Add(new wxStaticText(this, wxID_ANY, "Advanced Start Options:"), flagsLeft);
+  devModeCheckBox = new wxCheckBox(this, idCheckBoxDevMode, "-dev: Developer Mode");
+  noMoviesCheckBox = new wxCheckBox(this, idCheckBoxNoMovies, "-nomovies: No Intro Movies");
+  forceHighPolyCheckBox = new wxCheckBox(this, idCheckBoxForceHighPoly, "-forcehighpoly: High Poly Models at any Distance");
+  allAIModeCheckBox = new wxCheckBox(this, idCheckBoxAllAIMode, "All AI Mode: All players are controlled by the AI (requires -dev switch).");
+  allAIModeCheckBox->Disable();
   optionsSizer->Add(devModeCheckBox, flagsLeftNoBorder);
   optionsSizer->Add(noMoviesCheckBox, flagsLeftNoBorder);
   optionsSizer->Add(forceHighPolyCheckBox, flagsLeftNoBorder);
+  optionsSizer->Add(allAIModeCheckBox, flagsLeftNoBorder);
 
   wxBoxSizer* startButtonSizer = new wxBoxSizer(wxHORIZONTAL);
   startModButton = new wxButton(this, idBtnStartMod, "Start " + dowGame + " With Selected Mod", wxDefaultPosition, wxSize(195, 48), 0);
@@ -281,8 +299,8 @@ bool Dawn_of_War_Mod_ManagerFrame::InitGUI()
   wxFlexGridSizer* bottomSizer = new wxFlexGridSizer(2, 1, 1);
   installedModsListBox = new wxListBox(this, idListBoxInstalledMods, /*wxPoint(19, 137)*/ wxDefaultPosition, wxSize(375, 407), *modNames, wxLB_SINGLE);
   requiredModsListBox = new wxListBox(this, idListBoxRequiredMods, /*wxPoint(400, 137)*/ wxDefaultPosition, wxSize(375, 407), *requiredMods, wxLB_SINGLE);
-  bottomSizer->Add(new wxStaticText(this, wxID_ANY, "Currently Installed Mods", wxDefaultPosition, wxDefaultSize, 0), flagsLeft);
-  bottomSizer->Add(new wxStaticText(this, wxID_ANY, "Required Mods", wxDefaultPosition, wxDefaultSize, 0), flagsRightExpand);
+  bottomSizer->Add(new wxStaticText(this, wxID_ANY, "Currently Installed Mods"), flagsLeft);
+  bottomSizer->Add(new wxStaticText(this, wxID_ANY, "Required Mods"), flagsRightExpand);
   bottomSizer->Add(installedModsListBox, flagsLeft);
   bottomSizer->Add(requiredModsListBox, flagsRight);
 
@@ -297,33 +315,33 @@ bool Dawn_of_War_Mod_ManagerFrame::InitGUI()
 }
 
 /// @brief Gets all the file paths for all the module files in the executable directory.
-/// @return Boolean.
+/// @return True if successful, false otherwise.
 bool Dawn_of_War_Mod_ManagerFrame::GetModuleFilePaths()
 {
   wxDir dirHandle(dowExecDir);
   if (!dirHandle.IsOpened())
   {
-    wxMessageBox("The directory you have chosen cannot be opened.", "Cannot Open Directory");
+    wxMessageBox("The directory you have chosen cannot be opened.", "Cannot Open Directory", wxICON_ERROR);
     return false;
   }
 
   dirHandle.GetAllFiles(dowExecDir, moduleFilePaths, "*.module", wxDIR_FILES);
+  dirHandle.Close();
   moduleFilePaths->Shrink(); // Minimise ArrayString memory consumption.
 
   if (moduleFilePaths->GetCount() == 0)
   {
-    wxMessageBox("There are no module files found in the selected directory.", "No Module Files Found");
+    wxMessageBox("There are no module files found in the selected directory.", "No Module Files Found", wxICON_ERROR);
     return false;
   }
 
-  dirHandle.Close();
   return true;
 }
 
 /// @brief Extracts the name of the mods for the module files acquired via the GetModuleFilePaths() function.
 /// @see GetModuleFilePaths()
 /// @see GetModVersion()
-/// @return Boolean.
+/// @return True if successful, false otherwise.
 bool Dawn_of_War_Mod_ManagerFrame::GetModNames()
 {
   wxFileName fileNameHandle;
@@ -355,7 +373,7 @@ bool Dawn_of_War_Mod_ManagerFrame::GetModNames()
 
   if (modNames->GetCount() == 0)
   {
-    wxMessageBox("Unable to extract the names of the mods.", "No Mod Names Extracted");
+    wxMessageBox("Unable to extract the names of the mods.", "No Mod Names Extracted", wxICON_ERROR);
     return false;
   }
   return true;
@@ -363,14 +381,14 @@ bool Dawn_of_War_Mod_ManagerFrame::GetModNames()
 
 /// @brief Reads a module file and gathers all the Required Mods data from it.
 /// @param moduleFilePath The file path of a single module file.
-/// @return Boolean.
+/// @return True if successful, false otherwise.
 bool Dawn_of_War_Mod_ManagerFrame::GetRequiredMods(wxString moduleFilePath)
 {
   wxTextFile textFileHandle(moduleFilePath);
 
   if (!textFileHandle.Open())
   {
-    wxMessageBox("Unable to open file.", "Unable to open file.");
+    wxMessageBox("Unable to open " + moduleFilePath + ".", "Unable To Open File", wxICON_ERROR);
     return false;
   }
 
@@ -385,6 +403,8 @@ bool Dawn_of_War_Mod_ManagerFrame::GetRequiredMods(wxString moduleFilePath)
       counter++;
     }
   }
+
+  textFileHandle.Close();
   requiredMods->Shrink(); // Minimise wxArrayString memory consumption.
 
   if (requiredMods->GetCount() == 0)
@@ -404,7 +424,7 @@ std::string Dawn_of_War_Mod_ManagerFrame::GetModVersion(wxString moduleFilePath)
 
   if (!textFileHandle.Open())
   {
-    wxMessageBox("Unable to open file.", "Unable to open file.");
+    wxMessageBox("Unable to open " + moduleFilePath + ".", "Unable To Open File", wxICON_ERROR);
     return "error";
   }
 
@@ -415,9 +435,11 @@ std::string Dawn_of_War_Mod_ManagerFrame::GetModVersion(wxString moduleFilePath)
   {
     if (str.StartsWith("ModVersion = ", &modVersion))
     {
+      textFileHandle.Close();
       return modVersion.ToStdString();
     }
   }
+  textFileHandle.Close();
   return "";
 }
 
@@ -451,7 +473,7 @@ std::string Dawn_of_War_Mod_ManagerFrame::GetDesiredModVersion(size_t itemNumber
 /// @param &textFileHandle A reference to a wxTextFile handler.
 /// @see GetModVersion()
 /// @see GetDesiredModVersion()
-/// @return Boolean.
+/// @return True if the versions match, false if they don't.
 bool Dawn_of_War_Mod_ManagerFrame::CheckIfModVersionsMatch(size_t itemNumber, wxString moduleFilePath, wxString &fileString, wxTextFile &textFileHandle)
 {
   GetRequiredMods(moduleFilePath);
@@ -500,21 +522,20 @@ bool Dawn_of_War_Mod_ManagerFrame::CheckIfModVersionsMatch(size_t itemNumber, wx
 /// @param moduleFilePath The file path of a single module file.
 /// @see CheckForModDirectory()
 /// @see CheckIfModVersionsMatch()
-/// @return Boolean.
+/// @return True if the mods are installed, false if they're not.
 bool Dawn_of_War_Mod_ManagerFrame::CheckForInstalledMods(wxString moduleFilePath)
 {
   wxDir dirHandle(dowExecDir);
   if (!dirHandle.IsOpened())
   {
-    wxMessageBox("The directory cannot be opened.", "Cannot Open Directory");
+    wxMessageBox("The directory cannot be opened.", "Cannot Open Directory", wxICON_ERROR);
     return false;
   }
 
   wxTextFile textFileHandle(moduleFilePath);
-
   if (!textFileHandle.Open())
   {
-    wxMessageBox("Unable to open file.", "Unable to open file.");
+    wxMessageBox("Unable to open " + moduleFilePath + ".", "Unable To Open File", wxICON_ERROR);
     return false;
   }
 
@@ -557,6 +578,7 @@ bool Dawn_of_War_Mod_ManagerFrame::CheckForInstalledMods(wxString moduleFilePath
     }
   }
 
+  textFileHandle.Close();
   dirHandle.Close();
 
   if (numOfRequiredMods == numOfInstalledMods)
@@ -574,14 +596,14 @@ bool Dawn_of_War_Mod_ManagerFrame::CheckForInstalledMods(wxString moduleFilePath
 /// actually exists in the executable directory.
 /// @param moduleFilePath The file path of a single module file.
 /// @see CheckForInstalledMods()
-/// @return Boolean.
+/// @return True if the mod directory exists, false if it doesn't.
 bool Dawn_of_War_Mod_ManagerFrame::CheckForModDirectory(wxString moduleFilePath)
 {
   wxTextFile textFileHandle(moduleFilePath);
 
   if (!textFileHandle.Open())
   {
-    wxMessageBox("Unable to open file.", "Unable to open file.");
+    wxMessageBox("Unable to open " + moduleFilePath + ".", "Unable to open file.", wxICON_ERROR);
     return false;
   }
 
@@ -610,19 +632,21 @@ bool Dawn_of_War_Mod_ManagerFrame::CheckForModDirectory(wxString moduleFilePath)
     }
   }
 
+  dirHandle.Close();
+  textFileHandle.Close();
   return false;
 }
 
 /// @brief Checks if the supplied mod is marked as playable or non-playable.
 /// @param moduleFilePath The file path of a single module file.
-/// @return Boolean.
+/// @return True if the mod is playable, false if it isn't.
 bool Dawn_of_War_Mod_ManagerFrame::CheckIfModIsPlayable(wxString moduleFilePath)
 {
   wxTextFile textFileHandle(moduleFilePath);
 
   if (!textFileHandle.Open())
   {
-    wxMessageBox("Unable to open file.", "Unable to open file.");
+    wxMessageBox("Unable to open " + moduleFilePath + ".", "Unable To Open File", wxICON_ERROR);
     return false;
   }
 
@@ -643,34 +667,70 @@ bool Dawn_of_War_Mod_ManagerFrame::CheckIfModIsPlayable(wxString moduleFilePath)
     }
   }
 
+  textFileHandle.Close();
   return false;
 }
 
-/// @brief Runs the selected mod with selected command-line options, if possible.
+/// @brief Runs the selected mod with the selected command-line options, if possible.
 void Dawn_of_War_Mod_ManagerFrame::RunMod()
 {
   wxString currentlySelectedMod = modNames->Item(installedModsListBox->GetSelection());
   wxString command = dowExecDir + "\\" + dowExecutable + " -modname " + currentlySelectedMod;
+  wxString questionString = "Start the " + currentlySelectedMod + " mod";
+  wxString optionsString = "";
+
+  if (devModeActive || noMoviesActive || forceHighPolyActive || allAIModeActive)
+  {
+    questionString += " with the following options";
+    optionsString += "\n";
+  }
 
   if (devModeActive)
   {
     command += " -dev";
+    optionsString += "\n- Developer Mode";
   }
 
   if (noMoviesActive)
   {
     command += " -nomovies";
+    optionsString += "\n- No Intro Movies";
   }
 
   if (forceHighPolyActive)
   {
     command += " -forcehighpoly";
+    optionsString += "\n- High Poly Models At Any Distance";
   }
 
-  int answer = wxMessageBox("Start the following mod?\n" + command, "Start Mod?", wxYES|wxNO);
+  if (allAIModeActive)
+  {
+    optionsString += "\n- All AI Mode";
+  }
+
+  int answer = wxMessageBox(questionString + "?" + optionsString, "Start Mod?", wxYES|wxNO);
 
   if (answer == wxYES)
   {
+    if (allAIModeActive)
+    {
+      if (!ToggleAllAIMode(true))
+      {
+        wxMessageBox("Unable to run the mod with All AI Mode activated.", "Unable To Run Mod", wxICON_ERROR);
+        return;
+      }
+    }
+    else
+    {
+      if (DoesAllAIModeCommandExist())
+      {
+        if (!ToggleAllAIMode(false))
+        {
+          wxMessageBox("Unable to remove the All AI Mode command from the autoexec.lua file. You will need to remove it manually to run the mod without All AI Mode being activated.", "Unable to Remove Command", wxICON_ERROR);
+          return;
+        }
+      }
+    }
     wxExecute(command);
   }
 }
@@ -692,23 +752,136 @@ void Dawn_of_War_Mod_ManagerFrame::RefreshModListBoxes()
   installedModsListBox->InsertItems(*modNames, 0);
 }
 
+/// @brief Checks if there's any Fatal Data Errors in the warnings.log file and displays them to the user.
+void Dawn_of_War_Mod_ManagerFrame::ShowFatalDataErrors()
+{
+  wxTextFile textFileHandle(dowExecDir + "/warnings.log");
+  std::string errorString;
+
+  if (!textFileHandle.Open())
+  {
+    wxMessageBox("The warnings.log file could not be found/opened.", "Unable To Open File", wxICON_ERROR);
+    return;
+  }
+
+  for (wxString str = textFileHandle.GetFirstLine(); !textFileHandle.Eof(); str = textFileHandle.GetNextLine())
+  {
+    int stringIndex = str.Find("Fatal Data Error");
+
+    if (stringIndex != wxNOT_FOUND)
+    {
+      str = str.Mid(stringIndex);
+      errorString += str + "\n\n";
+    }
+  }
+
+  textFileHandle.Close();
+
+  if (!errorString.empty())
+  {
+    wxMessageBox(errorString, "Fatal Data Errors Found", wxICON_ERROR);
+  }
+  else
+  {
+    wxMessageBox("No Fatal Data Errors found in the warnings.log file.", "No Fatal Data Errors Found");
+  }
+}
+
+/// @brief Inserts or removes the "Cpu_ControlLocalPlayer()" function from the autoexec.lua file.
+/// @return True if successful, false otherwise.
+bool Dawn_of_War_Mod_ManagerFrame::ToggleAllAIMode(bool active)
+{
+  wxTextFile textFileHandle(dowExecDir + "/autoexec.lua");
+
+  if (!textFileHandle.Open())
+  {
+    if (!textFileHandle.Exists())
+    {
+      textFileHandle.Create();
+    }
+    else
+    {
+      wxMessageBox("The autoexec.lua file could not be opened. It may be corrupted.", "Unable To Open File", wxICON_ERROR);
+      return false;
+    }
+  }
+
+  bool commandFound = DoesAllAIModeCommandExist();
+  bool fileChanged = false;
+
+  if (active)
+  {
+    if (!commandFound)
+    {
+      textFileHandle.InsertLine("Cpu_ControlLocalPlayer()", 0);
+      fileChanged = true;
+    }
+  }
+  else
+  {
+    if (commandFound)
+    {
+      textFileHandle.RemoveLine(textFileHandle.GetCurrentLine());
+      fileChanged = true;
+    }
+  }
+
+  if (fileChanged)
+  {
+    if (!textFileHandle.Write())
+    {
+      wxMessageBox("Unable to write to the autoexec.lua file.", "Unable To Write To The File", wxICON_ERROR);
+      return false;
+    }
+  }
+
+  textFileHandle.Close();
+  return true;
+}
+
+/// @brief Checks if the "Cpu_ControlLocalPlayer()" function exists in the autoexec.lua file.
+bool Dawn_of_War_Mod_ManagerFrame::DoesAllAIModeCommandExist()
+{
+  wxTextFile textFileHandle(dowExecDir + "/autoexec.lua");
+
+  if (!textFileHandle.Open())
+  {
+    return false;
+  }
+
+  for (wxString str = textFileHandle.GetFirstLine(); !textFileHandle.Eof(); str = textFileHandle.GetNextLine())
+  {
+    if (str.StartsWith("Cpu_ControlLocalPlayer()"))
+    {
+      return true;
+    }
+  }
+
+  textFileHandle.Close();
+  return false;
+}
+
 /// @brief Event handler for when the Developer Mode Check Box is clicked.
 void Dawn_of_War_Mod_ManagerFrame::OnDevModeCheckBoxClicked(wxCommandEvent &event)
 {
-  if (devModeCheckBox->IsChecked())
+  if (event.IsChecked())
   {
     devModeActive = true;
+    allAIModeCheckBox->Enable();
   }
   else
   {
     devModeActive = false;
+    allAIModeActive = false;
+    allAIModeCheckBox->SetValue(false);
+    allAIModeCheckBox->Disable();
   }
 }
 
 /// @brief Event Handler for when the No Movies Check Box is clicked.
 void Dawn_of_War_Mod_ManagerFrame::OnNoMoviesCheckBoxClicked(wxCommandEvent &event)
 {
-  if (noMoviesCheckBox->IsChecked())
+  if (event.IsChecked())
   {
     noMoviesActive = true;
   }
@@ -721,13 +894,26 @@ void Dawn_of_War_Mod_ManagerFrame::OnNoMoviesCheckBoxClicked(wxCommandEvent &eve
 /// @brief Event Handler for when the Force High Poly Check Box is clicked.
 void Dawn_of_War_Mod_ManagerFrame::OnForceHighPolyCheckBoxClicked(wxCommandEvent &event)
 {
-  if (forceHighPolyCheckBox->IsChecked())
+  if (event.IsChecked())
   {
     forceHighPolyActive = true;
   }
   else
   {
     forceHighPolyActive = false;
+  }
+}
+
+/// @brief Event Handler for when the All AI Mode Check Box is clicked.
+void Dawn_of_War_Mod_ManagerFrame::OnAllAIModeCheckBoxClicked(wxCommandEvent &event)
+{
+  if (event.IsChecked())
+  {
+    allAIModeActive = true;
+  }
+  else
+  {
+    allAIModeActive = false;
   }
 }
 
@@ -747,7 +933,7 @@ void Dawn_of_War_Mod_ManagerFrame::OnStartMod(wxCommandEvent &event)
 /// @see CheckIfModIsPlayable()
 void Dawn_of_War_Mod_ManagerFrame::OnChangeModSelection(wxCommandEvent &event)
 {
-  wxString moduleFilePath = moduleFilePaths->Item(installedModsListBox->GetSelection());
+  wxString moduleFilePath = moduleFilePaths->Item(event.GetSelection());
 
   if (GetRequiredMods(moduleFilePath))
   {
@@ -787,10 +973,16 @@ void Dawn_of_War_Mod_ManagerFrame::OnClose(wxCloseEvent &event)
   Destroy();
 }
 
+/// @brief Event Handler for when the Show Fatal Data Errors Menu Item is clicked.
+void Dawn_of_War_Mod_ManagerFrame::OnShowFatalDataErrors(wxCommandEvent& event)
+{
+  ShowFatalDataErrors();
+}
+
 /// @brief Event Handler for when the Show All Mods Menu Item is clicked.
 void Dawn_of_War_Mod_ManagerFrame::OnShowAllMods(wxCommandEvent &event)
 {
-  if (fileMenu->IsChecked(idMenuItemShowAllMods))
+  if (event.IsChecked())
   {
     nonPlayableModsVisible = true;
     statusBar->SetStatusText("All mods are now shown.");
@@ -826,7 +1018,7 @@ void Dawn_of_War_Mod_ManagerFrame::OnAbout(wxCommandEvent &event)
 {
   wxAboutDialogInfo aboutInfo;
   aboutInfo.SetName("Dawn of War Mod Manager");
-  aboutInfo.SetVersion("1.1. Built with " + wxbuildinfo(long_f) + ".");
+  aboutInfo.SetVersion("1.2. Built with " + wxbuildinfo(long_f) + ".");
   aboutInfo.SetDescription("A mod manager for all the Dawn of War 1 games.\nBased on Cosmocrat's DoW MODenizer.\nIcon from the DoW MODenizer.");
   aboutInfo.SetCopyright("(C) 2015 THEONLYDarkShadow");
   aboutInfo.AddDeveloper("THEONLYDarkShadow");
